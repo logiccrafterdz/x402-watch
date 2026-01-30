@@ -3,7 +3,6 @@ use ethers::prelude::*;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{info, warn};
-use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,6 +79,6 @@ impl WalletManager {
         };
 
         let json = serde_json::to_string(&payment_sig)?;
-        Ok(general_purpose::STANDARD.encode(json))
+        Ok(base64::encode(json))
     }
 }

@@ -30,6 +30,14 @@ struct Args {
     #[arg(short, long, default_value = "10s")]
     timeout: String,
 
+    /// Timeout for settlement verification (e.g. 30s, 60s)
+    #[arg(long, default_value = "60s")]
+    settlement_timeout: String,
+
+    /// Verify actual settlement via facilitator or on-chain
+    #[arg(long, default_value_t = false)]
+    verify_settlement: bool,
+
     /// List of endpoint URLs (overrides config file if provided)
     #[arg(short, long)]
     urls: Vec<String>,
@@ -51,6 +59,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let timeout_duration = parse_duration(&args.timeout)?;
+    let settlement_timeout_duration = parse_duration(&args.settlement_timeout)?;
 
     // Initialize Wallet if PRIVATE_KEY is present
     let wallet_manager = if let Ok(pk) = std::env::var("X402_WATCH_PRIVATE_KEY") {
@@ -85,8 +94,8 @@ async fn main() -> Result<()> {
         let example = Config {
             endpoints: vec![
                 config::Endpoint {
-                    name: "Local Mock API".to_string(),
-                    url: "http://localhost:8080/check".to_string(),
+                    name: "X402 Demo".to_string(),
+                    url: "https://api.x402.org/demo".to_string(),
                 }
             ],
         };
@@ -95,7 +104,12 @@ async fn main() -> Result<()> {
         example
     };
 
-    let checker = Checker::new(timeout_duration, wallet_manager);
+    let checker = Checker::new(
+        timeout_duration, 
+        settlement_timeout_duration,
+        args.verify_settlement,
+        wallet_manager
+    );
 
     if let Some(interval_str) = args.interval {
         let duration = parse_duration(&interval_str)?;

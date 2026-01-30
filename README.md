@@ -45,9 +45,38 @@ export X402_WATCH_PRIVATE_KEY=your_private_key_here
 
 2. Run the tool:
 ```bash
-cargo run -- --urls https://api.example.com/data
+cargo run -- --urls https://api.x402.org/demo --verify-settlement --settlement-timeout 60s
 ```
 The tool will automatically detect the key, check your balance, and attempt the full payment cycle.
+
+## Practical Workflow Example
+
+### 1. Prepare `endpoints.yaml`
+Create a configuration file with the APIs you want to monitor:
+```yaml
+endpoints:
+  - name: "X402 Demo"
+    url: "https://api.x402.org/demo"
+  - name: "My Protected API"
+    url: "https://api.myapp.com/v1/protected"
+```
+
+### 2. Run the Watcher
+Monitor your endpoints in periodic mode with JSON output for your observability pipeline:
+```bash
+$env:X402_WATCH_PRIVATE_KEY="0x..."
+cargo run -- --config endpoints.yaml --interval 10m --format json
+```
+
+### 3. Sample Output (Human Format)
+```text
+--- x402 Health Report ---
+Endpoint             | Status | Error Code                | Message
+----------------------------------------------------------------------------------------------------
+X402 Demo            | PASS   | -                         | Full payment lifecycle verified
+My Protected API     | FAIL   | SETTLEMENT_FAILURE        | Settlement failure: expected 200 OK after signing, got 403 Forbidden
+----------------------------------------------------------------------------------------------------
+```
 
 ### JSON Output
 Output results in JSON format for CI/CD pipelines:
