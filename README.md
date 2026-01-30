@@ -68,7 +68,7 @@ $env:X402_WATCH_PRIVATE_KEY="0x..."
 cargo run -- --config endpoints.yaml --interval 10m --format json
 ```
 
-### 3. Sample Output (Human Format)
+### 3. Sample Output 
 ```text
 --- x402 Health Report ---
 Endpoint             | Status | Error Code                | Message
