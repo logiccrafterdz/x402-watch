@@ -2,6 +2,8 @@
 
 A lightweight health monitoring tool for public x402-enabled APIs.
 
+Built for the x402 ecosystem as an observability tool for public x402 APIs.
+
 ## Purpose
 `x402-watch` periodically verifies that x402-compliant endpoints behave correctly by asserting that:
 1. They return `402 Payment Required` when accessed without payment.
