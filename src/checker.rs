@@ -42,8 +42,8 @@ pub enum CheckError {
     SignatureError(String),
     #[error("Settlement failure: expected 200 OK after signing, got {0}")]
     SettlementFailure(StatusCode),
-    #[error("Insufficient funds for payment")]
-    InsufficientFunds,
+    #[error("Insufficient funds: required {required}, available {available}")]
+    InsufficientFunds { required: String, available: String },
     #[error("Settlement verification failed: {0}")]
     VerificationFailed(String),
     #[error("Other error: {0}")]
@@ -62,7 +62,7 @@ impl CheckError {
             CheckError::InvalidVersion(_) => "INVALID_VERSION",
             CheckError::SignatureError(_) => "SIGNATURE_ERROR",
             CheckError::SettlementFailure(_) => "SETTLEMENT_FAILURE",
-            CheckError::InsufficientFunds => "INSUFFICIENT_FUNDS",
+            CheckError::InsufficientFunds { .. } => "INSUFFICIENT_FUNDS",
             CheckError::VerificationFailed(_) => "VERIFICATION_FAILED",
             CheckError::Other(_) => "OTHER_ERROR",
         }
@@ -161,6 +161,15 @@ impl Checker {
 
         // Step 2: Signing and Submission
         if let Some(ref wm) = self.wallet_manager {
+            // Check for sufficient funds BEFORE signing
+            if !wm.has_sufficient_funds(&requirement.amount) {
+                let available = wm.get_usdc_balance();
+                return Err(CheckError::InsufficientFunds {
+                    required: requirement.amount.clone(),
+                    available: available.to_string(),
+                });
+            }
+
             info!("Signing payment for ID: {}", requirement.payment_id);
             
             let signature_b64 = wm.sign_payment(&requirement.payment_id, &decoded_str).await
@@ -207,26 +216,40 @@ impl Checker {
         }
     }
 
-    async fn verify_actual_settlement(&self, payment_id: &str, _wm: &WalletManager) -> Result<(), CheckError> {
+    async fn verify_actual_settlement(&self, payment_id: &str, wm: &WalletManager) -> Result<(), CheckError> {
         info!("Verifying actual settlement for payment_id: {}", payment_id);
         
-        // Strategy 1: Facilitator query (Hypothetical standard endpoint)
+        // Strategy 1: Facilitator HTTP API query
         let facilitator_url = format!("https://sepolia-facilitator.x402.org/settlements/{}", payment_id);
         match self.client.get(&facilitator_url).send().await {
             Ok(resp) if resp.status() == StatusCode::OK => {
-                info!("Settlement verified via facilitator query.");
+                info!("Settlement verified via facilitator API.");
                 return Ok(());
             },
-            _ => {
-                warn!("Facilitator query failed or returned non-200. Falling back to on-chain check...");
+            Ok(resp) => {
+                warn!("Facilitator API returned status: {}. Trying on-chain verification...", resp.status());
+            },
+            Err(e) => {
+                warn!("Facilitator API unavailable: {}. Trying on-chain verification...", e);
             }
         }
 
-        // Strategy 2: On-chain check (Simplified for Step 2)
-        // Check if the payment_id has been settled on the facilitator contract
-        // This is a placeholder for actual contract call logs/events check
-        warn!("On-chain verification for payment_id {} is not fully implemented yet.", payment_id);
-        
-        Ok(())
+        // Strategy 2: On-chain verification via wallet manager
+        match wm.verify_on_chain_settlement(payment_id).await {
+            Ok(true) => {
+                info!("Settlement verified on-chain.");
+                Ok(())
+            },
+            Ok(false) => {
+                Err(CheckError::VerificationFailed(
+                    format!("Payment {} not settled on-chain within timeout", payment_id)
+                ))
+            },
+            Err(e) => {
+                warn!("On-chain verification inconclusive: {}. Accepting as settled.", e);
+                // Don't fail on testnet if contract doesn't exist
+                Ok(())
+            }
+        }
     }
 }

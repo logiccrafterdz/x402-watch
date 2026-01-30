@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
         if pk.trim().is_empty() {
             None
         } else {
-            let wm = WalletManager::new(&pk).await?;
+            let mut wm = WalletManager::new(&pk).await?;
             // Perform startup balance check
             if let Err(e) = wm.check_balances().await {
                 error!("Wallet initialization failed: {}", e);
@@ -143,7 +143,7 @@ async fn run_checks(checker: &Checker, config: &Config, format: &str) -> Result<
 
 fn print_report(results: &[checker::CheckResult]) {
     println!("\n--- x402 Health Report ---");
-    println!("{:<20} | {:<5} | {:<25} | {}", "Endpoint", "Status", "Error Code", "Message");
+    println!("{:<20} | {:<5} | {:<25} | Message", "Endpoint", "Status", "Error Code");
     println!("{}", "-".repeat(100));
     for res in results {
         let status_str = match res.status {
@@ -161,7 +161,7 @@ fn parse_duration(s: &str) -> Result<Duration> {
     let mut unit = String::new();
 
     for c in s.chars() {
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             num_str.push(c);
         } else {
             unit.push(c);
@@ -173,7 +173,7 @@ fn parse_duration(s: &str) -> Result<Duration> {
     }
 
     let num: u64 = num_str.parse()?;
-    match unit.to_lowercase().trim().as_ref() {
+    match unit.to_lowercase().trim() {
         "s" | "" => Ok(Duration::from_secs(num)),
         "m" => Ok(Duration::from_secs(num * 60)),
         "h" => Ok(Duration::from_secs(num * 3600)),

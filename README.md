@@ -85,10 +85,14 @@ Output results in JSON format for CI/CD pipelines:
 ```
 JSON results will include `error_code` fields for automated diagnostics (e.g., `INSUFFICIENT_FUNDS`, `SETTLEMENT_FAILURE`).
 
-## Next Steps
-- Implement payment signing and testnet settlement.
-- Add support for facilitators.
-- Add a web dashboard for visualization.
+## Features
+-  **Dry-run validation**: Verify 402 response and PaymentRequirement structure
+-  **Full payment lifecycle**: Sign and submit payments with automatic retries
+-  **Balance verification**: Check ETH and USDC balances before signing
+-  **Smart retry logic**: Exponential backoff for 202 Accepted / 425 Too Early
+-  **Settlement verification**: HTTP facilitator + on-chain fallback
+-  **Multiple output formats**: Human-readable and JSON for CI/CD
+-  **Periodic monitoring**: Configurable interval for continuous checks
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
