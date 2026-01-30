@@ -23,6 +23,10 @@ struct Args {
     #[arg(short, long)]
     interval: Option<String>,
 
+    /// Timeout for each request (e.g. 5s, 10s)
+    #[arg(short, long, default_value = "10s")]
+    timeout: String,
+
     /// List of endpoint URLs (overrides config file if provided)
     #[arg(short, long)]
     urls: Vec<String>,
@@ -41,6 +45,8 @@ async fn main() -> Result<()> {
         .with_max_level(Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
+
+    let timeout_duration = parse_duration(&args.timeout)?;
 
     let config = if !args.urls.is_empty() {
         Config {
@@ -67,7 +73,7 @@ async fn main() -> Result<()> {
         example
     };
 
-    let checker = Checker::new();
+    let checker = Checker::new(timeout_duration);
 
     if let Some(interval_str) = args.interval {
         let duration = parse_duration(&interval_str)?;
@@ -106,7 +112,8 @@ fn print_report(results: &[checker::CheckResult]) {
             checker::CheckStatus::Pass => "PASS",
             checker::CheckStatus::Fail => "FAIL",
         };
-        println!("{:<20} | {:<40} | {:<5} | {}", res.name, res.url, status_str, res.message);
+        let error_code = res.error_code.as_deref().unwrap_or("-");
+        println!("{:<20} | {:<5} | {:<25} | {}", res.name, status_str, error_code, res.message);
     }
     println!("--------------------------\n");
 }
@@ -123,9 +130,13 @@ fn parse_duration(s: &str) -> Result<Duration> {
         }
     }
 
+    if num_str.is_empty() {
+        return Err(anyhow::anyhow!("Invalid duration format: {}", s));
+    }
+
     let num: u64 = num_str.parse()?;
-    match unit.to_lowercase().as_str() {
-        "s" => Ok(Duration::from_secs(num)),
+    match unit.to_lowercase().trim().as_ref() {
+        "s" | "" => Ok(Duration::from_secs(num)),
         "m" => Ok(Duration::from_secs(num * 60)),
         "h" => Ok(Duration::from_secs(num * 3600)),
         _ => Err(anyhow::anyhow!("Invalid duration unit: {}. Use s, m, or h.", unit)),

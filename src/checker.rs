@@ -1,14 +1,17 @@
-use anyhow::{anyhow, Result};
-use reqwest::{Client, StatusCode};
+use anyhow::Result;
+use reqwest::{Client, StatusCode, redirect};
 use serde::{Deserialize, Serialize};
 use tracing::{info, error};
 use base64::{engine::general_purpose, Engine as _};
+use std::time::Duration;
+use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckResult {
     pub name: String,
     pub url: String,
     pub status: CheckStatus,
+    pub error_code: Option<String>,
     pub message: String,
 }
 
@@ -16,6 +19,41 @@ pub struct CheckResult {
 pub enum CheckStatus {
     Pass,
     Fail,
+}
+
+#[derive(Error, Debug)]
+pub enum CheckError {
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+    #[error("Expected status 402 Payment Required, got {0}")]
+    UnexpectedStatusCode(StatusCode),
+    #[error("Missing PAYMENT-REQUIRED header")]
+    MissingHeader,
+    #[error("Invalid characters in PAYMENT-REQUIRED header")]
+    InvalidHeaderChars,
+    #[error("Invalid base64 in PAYMENT-REQUIRED header: {0}")]
+    InvalidBase64(String),
+    #[error("Failed to parse PaymentRequirement JSON: {0}")]
+    SchemaViolation(String),
+    #[error("Unsupported x402 version: {0}. Supported versions: 1")]
+    InvalidVersion(String),
+    #[error("Other error: {0}")]
+    Other(#[from] anyhow::Error),
+}
+
+impl CheckError {
+    pub fn code(&self) -> &str {
+        match self {
+            CheckError::Network(_) => "NETWORK_ERROR",
+            CheckError::UnexpectedStatusCode(_) => "UNEXPECTED_STATUS_CODE",
+            CheckError::MissingHeader => "MISSING_HEADER",
+            CheckError::InvalidHeaderChars => "INVALID_HEADER_CHARS",
+            CheckError::InvalidBase64(_) => "INVALID_BASE64",
+            CheckError::SchemaViolation(_) => "SCHEMA_VIOLATION",
+            CheckError::InvalidVersion(_) => "INVALID_VERSION",
+            CheckError::Other(_) => "OTHER_ERROR",
+        }
+    }
 }
 
 /// A simplified version of the x402 PaymentRequirement for validation
@@ -36,10 +74,11 @@ pub struct Checker {
 }
 
 impl Checker {
-    pub fn new() -> Self {
+    pub fn new(timeout: Duration) -> Self {
         Self {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
+                .timeout(timeout)
+                .redirect(redirect::Policy::none())
                 .build()
                 .unwrap_or_else(|_| Client::new()),
         }
@@ -53,7 +92,8 @@ impl Checker {
                 name: name.to_string(),
                 url: url.to_string(),
                 status: CheckStatus::Pass,
-                message: "Valid x402 endpoint (402 status + valid PaymentRequirement)".to_string(),
+                error_code: None,
+                message: "Valid x402 endpoint".to_string(),
             },
             Err(e) => {
                 error!("Check failed for {}: {}", name, e);
@@ -61,35 +101,41 @@ impl Checker {
                     name: name.to_string(),
                     url: url.to_string(),
                     status: CheckStatus::Fail,
+                    error_code: Some(e.code().to_string()),
                     message: e.to_string(),
                 }
             }
         }
     }
 
-    async fn do_check(&self, url: &str) -> Result<()> {
+    async fn do_check(&self, url: &str) -> Result<(), CheckError> {
         let resp = self.client.get(url).send().await?;
 
         if resp.status() != StatusCode::PAYMENT_REQUIRED {
-            return Err(anyhow!("Expected status 402 Payment Required, got {}", resp.status()));
+            return Err(CheckError::UnexpectedStatusCode(resp.status()));
         }
 
         let header_val = resp.headers()
             .get("PAYMENT-REQUIRED")
-            .ok_or_else(|| anyhow!("Missing PAYMENT-REQUIRED header"))?
+            .ok_or(CheckError::MissingHeader)?
             .to_str()
-            .map_err(|_| anyhow!("Invalid characters in PAYMENT-REQUIRED header"))?;
+            .map_err(|_| CheckError::InvalidHeaderChars)?;
 
         // Validate base64
         let decoded_bytes = general_purpose::STANDARD.decode(header_val)
-            .map_err(|e| anyhow!("Invalid base64 in PAYMENT-REQUIRED header: {}", e))?;
+            .map_err(|e| CheckError::InvalidBase64(e.to_string()))?;
 
         let decoded_str = String::from_utf8(decoded_bytes)
-            .map_err(|e| anyhow!("Decoded PAYMENT-REQUIRED header is not valid UTF-8: {}", e))?;
+            .map_err(|e| CheckError::Other(anyhow::anyhow!("UTF-8 error: {}", e)))?;
 
         // Parse and validate the PaymentRequirement JSON
-        let _payment_requirement: PaymentRequirement = serde_json::from_str(&decoded_str)
-            .map_err(|e| anyhow!("Failed to parse PaymentRequirement JSON: {}", e))?;
+        let payment_requirement: PaymentRequirement = serde_json::from_str(&decoded_str)
+            .map_err(|e| CheckError::SchemaViolation(e.to_string()))?;
+
+        // Version check
+        if payment_requirement.version != "1" {
+            return Err(CheckError::InvalidVersion(payment_requirement.version));
+        }
 
         Ok(())
     }
