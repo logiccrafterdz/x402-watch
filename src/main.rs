@@ -1,16 +1,19 @@
 mod config;
 mod checker;
+mod wallet;
 
 use clap::Parser;
 use std::path::PathBuf;
 use std::time::Duration;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use tokio::time::sleep;
-use tracing::{info, Level};
+use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;
+use dotenv::dotenv;
 
 use crate::config::Config;
 use crate::checker::Checker;
+use crate::wallet::WalletManager;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -38,6 +41,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv().ok();
     let args = Args::parse();
 
     // Setup logging
@@ -47,6 +51,24 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let timeout_duration = parse_duration(&args.timeout)?;
+
+    // Initialize Wallet if PRIVATE_KEY is present
+    let wallet_manager = if let Ok(pk) = std::env::var("X402_WATCH_PRIVATE_KEY") {
+        if pk.trim().is_empty() {
+            None
+        } else {
+            let wm = WalletManager::new(&pk).await?;
+            // Perform startup balance check
+            if let Err(e) = wm.check_balances().await {
+                error!("Wallet initialization failed: {}", e);
+                return Err(anyhow!("Failed to initialize wallet: {}", e));
+            }
+            Some(wm)
+        }
+    } else {
+        info!("X402_WATCH_PRIVATE_KEY not set. Running in dry-run mode (Step 1 only).");
+        None
+    };
 
     let config = if !args.urls.is_empty() {
         Config {
@@ -63,8 +85,8 @@ async fn main() -> Result<()> {
         let example = Config {
             endpoints: vec![
                 config::Endpoint {
-                    name: "Example API".to_string(),
-                    url: "https://api.example.com/data".to_string(),
+                    name: "Local Mock API".to_string(),
+                    url: "http://localhost:8080/check".to_string(),
                 }
             ],
         };
@@ -73,7 +95,7 @@ async fn main() -> Result<()> {
         example
     };
 
-    let checker = Checker::new(timeout_duration);
+    let checker = Checker::new(timeout_duration, wallet_manager);
 
     if let Some(interval_str) = args.interval {
         let duration = parse_duration(&interval_str)?;
@@ -107,15 +129,17 @@ async fn run_checks(checker: &Checker, config: &Config, format: &str) -> Result<
 
 fn print_report(results: &[checker::CheckResult]) {
     println!("\n--- x402 Health Report ---");
+    println!("{:<20} | {:<5} | {:<25} | {}", "Endpoint", "Status", "Error Code", "Message");
+    println!("{}", "-".repeat(100));
     for res in results {
         let status_str = match res.status {
             checker::CheckStatus::Pass => "PASS",
             checker::CheckStatus::Fail => "FAIL",
         };
         let error_code = res.error_code.as_deref().unwrap_or("-");
-        println!("{:<20} | {:<5} | {:<25} | {}", res.name, status_str, error_code, res.message);
+        println!("{:<20} | {:<6} | {:<25} | {}", res.name, status_str, error_code, res.message);
     }
-    println!("--------------------------\n");
+    println!("{}\n", "-".repeat(100));
 }
 
 fn parse_duration(s: &str) -> Result<Duration> {
@@ -131,7 +155,7 @@ fn parse_duration(s: &str) -> Result<Duration> {
     }
 
     if num_str.is_empty() {
-        return Err(anyhow::anyhow!("Invalid duration format: {}", s));
+        return Err(anyhow!("Invalid duration format: {}", s));
     }
 
     let num: u64 = num_str.parse()?;
@@ -139,6 +163,6 @@ fn parse_duration(s: &str) -> Result<Duration> {
         "s" | "" => Ok(Duration::from_secs(num)),
         "m" => Ok(Duration::from_secs(num * 60)),
         "h" => Ok(Duration::from_secs(num * 3600)),
-        _ => Err(anyhow::anyhow!("Invalid duration unit: {}. Use s, m, or h.", unit)),
+        _ => Err(anyhow!("Invalid duration unit: {}. Use s, m, or h.", unit)),
     }
 }

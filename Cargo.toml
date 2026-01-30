@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# "x402-rs" = "0.12" # Fails on Windows due to nix/signal_hook
+# "x402-rs" = { version = "0.12", default-features = false }
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4.0", features = ["derive"] }
@@ -17,3 +17,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.21"
 chrono = "0.4"
+dotenv = "0.15"
+ethers = { version = "2.0", features = ["rustls", "ws", "abigen"] }

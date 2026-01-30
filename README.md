@@ -33,11 +33,28 @@ Monitor endpoints every 5 minutes:
 ./target/release/x402-watch --interval 5m
 ```
 
+### Full Payment Validation (Step 2)
+To verify the full payment lifecycle (402 -> Signing -> 200 OK), you must provide a private key with testnet USDC on Base Sepolia.
+
+1. Set your private key:
+```bash
+export X402_WATCH_PRIVATE_KEY=your_private_key_here
+# On Windows PowerShell:
+# $env:X402_WATCH_PRIVATE_KEY="your_private_key_here"
+```
+
+2. Run the tool:
+```bash
+cargo run -- --urls https://api.example.com/data
+```
+The tool will automatically detect the key, check your balance, and attempt the full payment cycle.
+
 ### JSON Output
 Output results in JSON format for CI/CD pipelines:
 ```bash
 ./target/release/x402-watch --format json
 ```
+JSON results will include `error_code` fields for automated diagnostics (e.g., `INSUFFICIENT_FUNDS`, `SETTLEMENT_FAILURE`).
 
 ## Next Steps
 - Implement payment signing and testnet settlement.

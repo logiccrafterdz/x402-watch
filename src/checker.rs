@@ -1,10 +1,11 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use reqwest::{Client, StatusCode, redirect};
 use serde::{Deserialize, Serialize};
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use base64::{engine::general_purpose, Engine as _};
 use std::time::Duration;
 use thiserror::Error;
+use crate::wallet::WalletManager;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckResult {
@@ -37,6 +38,12 @@ pub enum CheckError {
     SchemaViolation(String),
     #[error("Unsupported x402 version: {0}. Supported versions: 1")]
     InvalidVersion(String),
+    #[error("Signature error: {0}")]
+    SignatureError(String),
+    #[error("Settlement failure: expected 200 OK after signing, got {0}")]
+    SettlementFailure(StatusCode),
+    #[error("Insufficient funds for payment")]
+    InsufficientFunds,
     #[error("Other error: {0}")]
     Other(#[from] anyhow::Error),
 }
@@ -51,6 +58,9 @@ impl CheckError {
             CheckError::InvalidBase64(_) => "INVALID_BASE64",
             CheckError::SchemaViolation(_) => "SCHEMA_VIOLATION",
             CheckError::InvalidVersion(_) => "INVALID_VERSION",
+            CheckError::SignatureError(_) => "SIGNATURE_ERROR",
+            CheckError::SettlementFailure(_) => "SETTLEMENT_FAILURE",
+            CheckError::InsufficientFunds => "INSUFFICIENT_FUNDS",
             CheckError::Other(_) => "OTHER_ERROR",
         }
     }
@@ -71,29 +81,31 @@ pub struct PaymentRequirement {
 
 pub struct Checker {
     client: Client,
+    wallet_manager: Option<WalletManager>,
 }
 
 impl Checker {
-    pub fn new(timeout: Duration) -> Self {
+    pub fn new(timeout: Duration, wallet_manager: Option<WalletManager>) -> Self {
         Self {
             client: Client::builder()
                 .timeout(timeout)
                 .redirect(redirect::Policy::none())
                 .build()
                 .unwrap_or_else(|_| Client::new()),
+            wallet_manager,
         }
     }
 
     pub async fn check(&self, name: &str, url: &str) -> CheckResult {
         info!("Checking endpoint: {} ({})", name, url);
         
-        match self.do_check(url).await {
+        match self.do_full_payment_cycle(url).await {
             Ok(_) => CheckResult {
                 name: name.to_string(),
                 url: url.to_string(),
                 status: CheckStatus::Pass,
                 error_code: None,
-                message: "Valid x402 endpoint".to_string(),
+                message: "Full payment lifecycle verified (402 -> Sign -> 200)".to_string(),
             },
             Err(e) => {
                 error!("Check failed for {}: {}", name, e);
@@ -108,7 +120,8 @@ impl Checker {
         }
     }
 
-    async fn do_check(&self, url: &str) -> Result<(), CheckError> {
+    async fn do_full_payment_cycle(&self, url: &str) -> Result<(), CheckError> {
+        // Step 1: Initial request to get the 402 and PaymentRequirement
         let resp = self.client.get(url).send().await?;
 
         if resp.status() != StatusCode::PAYMENT_REQUIRED {
@@ -121,22 +134,49 @@ impl Checker {
             .to_str()
             .map_err(|_| CheckError::InvalidHeaderChars)?;
 
-        // Validate base64
+        // Validate and parse PaymentRequirement
         let decoded_bytes = general_purpose::STANDARD.decode(header_val)
             .map_err(|e| CheckError::InvalidBase64(e.to_string()))?;
 
         let decoded_str = String::from_utf8(decoded_bytes)
-            .map_err(|e| CheckError::Other(anyhow::anyhow!("UTF-8 error: {}", e)))?;
+            .map_err(|e| CheckError::Other(anyhow!("UTF-8 error: {}", e)))?;
 
-        // Parse and validate the PaymentRequirement JSON
-        let payment_requirement: PaymentRequirement = serde_json::from_str(&decoded_str)
+        let requirement: PaymentRequirement = serde_json::from_str(&decoded_str)
             .map_err(|e| CheckError::SchemaViolation(e.to_string()))?;
 
-        // Version check
-        if payment_requirement.version != "1" {
-            return Err(CheckError::InvalidVersion(payment_requirement.version));
+        if requirement.version != "1" {
+            return Err(CheckError::InvalidVersion(requirement.version));
         }
 
-        Ok(())
+        // Step 2: Signing and Submission (if wallet is available)
+        if let Some(ref wm) = self.wallet_manager {
+            info!("Signing payment for ID: {}", requirement.payment_id);
+            
+            let signature_b64 = wm.sign_payment(&requirement.payment_id, &decoded_str).await
+                .map_err(|e| CheckError::SignatureError(e.to_string()))?;
+
+            info!("Submitting payment signature...");
+            let retry_resp = self.client.get(url)
+                .header("PAYMENT-SIGNATURE", signature_b64)
+                .send()
+                .await?;
+
+            if retry_resp.status() != StatusCode::OK {
+                return Err(CheckError::SettlementFailure(retry_resp.status()));
+            }
+
+            let body = retry_resp.text().await?;
+            if body.trim().is_empty() {
+                warn!("Warning: Received 200 OK but body is empty.");
+            } else {
+                info!("Successfully received protected content ({} bytes)", body.len());
+            }
+
+            Ok(())
+        } else {
+            // Dry-run mode (Step 1 only)
+            info!("No wallet configured, dry-run check only.");
+            Ok(())
+        }
     }
 }

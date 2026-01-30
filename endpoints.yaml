@@ -3,3 +3,5 @@ endpoints:
     url: "http://localhost:8080/check"
   - name: "X402 Demo"
     url: "https://api.x402.org/demo"
+  - name: "Local Mock API"
+    url: "http://localhost:8080/check"
