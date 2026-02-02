@@ -89,7 +89,7 @@ JSON results will include `error_code` fields for automated diagnostics (e.g., `
 
 ## Features
 -  **x402 v2 Compliant**: Uses `x402Version`, `payTo`, and structured `PaymentPayload`
--  **GET & POST Support**: Configure HTTP method per endpoint
+-  **GET & POST Support**: Configure HTTP method per endpoint via `--method` flag or `endpoints.yaml`
 -  **Dry-run validation**: Verify 402 response and PaymentRequirement structure
 -  **Full payment lifecycle**: Sign and submit payments with automatic retries
 -  **Balance verification**: Check ETH and USDC balances before signing
@@ -97,6 +97,67 @@ JSON results will include `error_code` fields for automated diagnostics (e.g., `
 -  **Settlement verification**: HTTP facilitator + on-chain fallback
 -  **Multiple output formats**: Human-readable and JSON for CI/CD
 -  **Periodic monitoring**: Configurable interval for continuous checks
+
+## POST Request Support
+
+Configure POST requests per endpoint in `endpoints.yaml`:
+```yaml
+endpoints:
+  - name: "POST Protected API"
+    url: "https://api.example.com/v1/create"
+    method: "POST"
+  - name: "GET Demo"
+    url: "https://api.x402.org/demo"
+    method: "GET"
+```
+
+Or use the `--method` flag for CLI-specified URLs:
+```bash
+cargo run -- --urls https://api.example.com/data --method POST
+```
+
+## Testing & Verification
+
+### Testing Against Coinbase Reference Server
+
+To verify full x402 v2 compliance, test against the reference examples from the [coinbase/x402](https://github.com/coinbase/x402) repository:
+
+1. **Clone and run a reference server locally:**
+```bash
+git clone https://github.com/coinbase/x402.git
+cd x402/examples/typescript/express
+npm install
+npm start
+```
+
+2. **Test with x402-watch:**
+```bash
+cargo run -- --urls http://localhost:4021/weather
+```
+
+Expected output for a compliant endpoint:
+```text
+Endpoint             | Status | Error Code                | Message
+----------------------------------------------------------------------------------------------------
+http://localhost:4021/weather | PASS   | -                         | Full payment lifecycle verified (x402 v2 compliant)
+```
+
+### Schema Validation Checklist
+
+This tool validates the following x402 v2 fields:
+- `x402Version`: Must be `2` (number, not string)
+- `accepts`: Array of payment requirements
+- `payTo`: Recipient wallet address in each requirement
+- `scheme`, `network`, `asset`, `amount`, `maxTimeoutSeconds`: Required fields
+
+### POST Method Testing
+```bash
+# Test POST endpoint
+cargo run -- --urls https://api.example.com/create --method POST
+
+# Or via endpoints.yaml with method field
+cargo run -- --config endpoints.yaml
+```
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
