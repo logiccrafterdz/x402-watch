@@ -125,38 +125,33 @@ To verify full x402 v2 compliance, test against the reference examples from the 
 1. **Clone and run a reference server locally:**
 ```bash
 git clone https://github.com/coinbase/x402.git
-cd x402/examples/typescript/express
+cd x402/examples/typescript/servers/express
 npm install
 npm start
 ```
 
-2. **Test with x402-watch (Dry-run mode):**
+2. **Test with x402-watch:**
+
+#### Scenario A: Dry-run Validation (No private key)
+Verifies that the server returns a valid 402 Payment Required response with the correct v2 headers.
 ```bash
 cargo run -- --urls http://localhost:4021/weather
 ```
+**Expected Message**: `Payment requirements validated (dry-run, x402 v2 compliant)`
 
-Expected output for a compliant endpoint (dry-run):
-```text
-Endpoint             | Status | Error Code | Message
-----------------------------------------------------------------------------------------------------
-http://localhost:4021/weather | PASS   | -          | Payment requirements validated (dry-run, x402 v2 compliant)
-```
+#### Scenario B: Full Payment Cycle (With private key)
+Verifies the full lifecycle: Request -> 402 -> Signing -> Re-submission -> 200 OK.
 
-3. **Test with x402-watch (Full Payment Cycle):**
+**Unix/macOS**:
 ```bash
-# Set your private key
-$env:X402_WATCH_PRIVATE_KEY="0x..." # Windows
-# export X402_WATCH_PRIVATE_KEY="0x..." # Linux/macOS
-
-cargo run -- --urls http://localhost:4021/weather
+X402_WATCH_PRIVATE_KEY=your_key_here cargo run -- --urls http://localhost:4021/weather
 ```
 
-Expected output for a compliant endpoint (full cycle):
-```text
-Endpoint             | Status | Error Code | Message
-----------------------------------------------------------------------------------------------------
-http://localhost:4021/weather | PASS   | -          | Full payment lifecycle verified (x402 v2 compliant)
+**Windows PowerShell**:
+```powershell
+$env:X402_WATCH_PRIVATE_KEY="your_key_here"; cargo run -- --urls http://localhost:4021/weather
 ```
+**Expected Message**: `Full payment lifecycle verified (x402 v2 compliant)`
 
 ### Schema Validation Checklist
 

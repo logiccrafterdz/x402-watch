@@ -77,6 +77,7 @@ pub struct PaymentRequiredResponse {
     pub error: Option<String>,
     pub resource: ResourceInfo,
     pub accepts: Vec<PaymentRequirements>,
+    #[serde(default)]
     pub extensions: serde_json::Value,
 }
 
@@ -115,8 +116,8 @@ impl Checker {
         info!("Checking endpoint: {} {} ({})", method, name, url);
         
         match self.do_full_payment_cycle(url, method).await {
-            Ok(_) => {
-                let msg = if self.wallet_manager.is_some() {
+            Ok(is_full_cycle) => {
+                let message = if is_full_cycle {
                     "Full payment lifecycle verified (x402 v2 compliant)".to_string()
                 } else {
                     "Payment requirements validated (dry-run, x402 v2 compliant)".to_string()
@@ -126,9 +127,9 @@ impl Checker {
                     url: url.to_string(),
                     status: CheckStatus::Pass,
                     error_code: None,
-                    message: msg,
+                    message,
                 }
-            }
+            },
             Err(e) => {
                 error!("Check failed for {}: {}", name, e);
                 CheckResult {
@@ -142,7 +143,7 @@ impl Checker {
         }
     }
 
-    async fn do_full_payment_cycle(&self, url: &str, method: Method) -> Result<(), CheckError> {
+    async fn do_full_payment_cycle(&self, url: &str, method: Method) -> Result<bool, CheckError> {
         // Step 1: Initial request
         let resp = self.client.request(method.clone(), url).send().await?;
 
@@ -221,10 +222,10 @@ impl Checker {
                 self.verify_actual_settlement_v2(requirement, wm).await?;
             }
 
-            Ok(())
+            Ok(true)
         } else {
             info!("No wallet configured, dry-run check only.");
-            Ok(())
+            Ok(false)
         }
     }
 
