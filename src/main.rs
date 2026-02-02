@@ -42,8 +42,12 @@ struct Args {
     #[arg(short, long)]
     urls: Vec<String>,
 
+    /// HTTP method to use (GET, POST)
+    #[arg(long, default_value = "GET")]
+    method: String,
+
     /// Output format (human or json)
-    #[arg(short, long, default_value = "human")]
+    #[arg(short = 'o', long, default_value = "human")]
     format: String,
 }
 
@@ -84,6 +88,7 @@ async fn main() -> Result<()> {
             endpoints: args.urls.into_iter().map(|u| config::Endpoint {
                 name: u.clone(),
                 url: u,
+                method: args.method.clone(),
             }).collect(),
         }
     } else if args.config.exists() {
@@ -96,6 +101,7 @@ async fn main() -> Result<()> {
                 config::Endpoint {
                     name: "X402 Demo".to_string(),
                     url: "https://api.x402.org/demo".to_string(),
+                    method: "GET".to_string(),
                 }
             ],
         };
@@ -128,7 +134,7 @@ async fn main() -> Result<()> {
 async fn run_checks(checker: &Checker, config: &Config, format: &str) -> Result<()> {
     let mut results = Vec::new();
     for endpoint in &config.endpoints {
-        let result = checker.check(&endpoint.name, &endpoint.url).await;
+        let result = checker.check(&endpoint.name, &endpoint.url, &endpoint.method).await;
         results.push(result);
     }
 

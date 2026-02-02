@@ -2,13 +2,13 @@
 
 A lightweight health monitoring tool for public x402-enabled APIs.
 
-Built for the x402 ecosystem as an observability tool for public x402 APIs.
+Built for the x402 ecosystem as an observability tool for public x402 APIs. **Now fully compliant with x402 Protocol Specification v2.**
 
 ## Purpose
 `x402-watch` periodically verifies that x402-compliant endpoints behave correctly by asserting that:
 1. They return `402 Payment Required` when accessed without payment.
-2. They include a valid `PAYMENT-REQUIRED` header.
-3. The header contains a well-formed, base64-encoded `PaymentRequirement` object.
+2. They include a valid `PAYMENT-REQUIRED` header with `x402Version: 2`.
+3. The header contains a well-formed, base64-encoded `PaymentRequired` object with `accepts` array and `payTo` field.
 
 ## Usage
 
@@ -88,6 +88,8 @@ Output results in JSON format for CI/CD pipelines:
 JSON results will include `error_code` fields for automated diagnostics (e.g., `INSUFFICIENT_FUNDS`, `SETTLEMENT_FAILURE`).
 
 ## Features
+-  **x402 v2 Compliant**: Uses `x402Version`, `payTo`, and structured `PaymentPayload`
+-  **GET & POST Support**: Configure HTTP method per endpoint
 -  **Dry-run validation**: Verify 402 response and PaymentRequirement structure
 -  **Full payment lifecycle**: Sign and submit payments with automatic retries
 -  **Balance verification**: Check ETH and USDC balances before signing

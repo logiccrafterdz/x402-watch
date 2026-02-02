@@ -9,4 +9,10 @@ pub struct Config {
 pub struct Endpoint {
     pub name: String,
     pub url: String,
+    #[serde(default = "default_method")]
+    pub method: String,
+}
+
+fn default_method() -> String {
+    "GET".to_string()
 }
