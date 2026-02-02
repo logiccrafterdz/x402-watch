@@ -130,16 +130,32 @@ npm install
 npm start
 ```
 
-2. **Test with x402-watch:**
+2. **Test with x402-watch (Dry-run mode):**
 ```bash
 cargo run -- --urls http://localhost:4021/weather
 ```
 
-Expected output for a compliant endpoint:
+Expected output for a compliant endpoint (dry-run):
 ```text
-Endpoint             | Status | Error Code                | Message
+Endpoint             | Status | Error Code | Message
 ----------------------------------------------------------------------------------------------------
-http://localhost:4021/weather | PASS   | -                         | Full payment lifecycle verified (x402 v2 compliant)
+http://localhost:4021/weather | PASS   | -          | Payment requirements validated (dry-run, x402 v2 compliant)
+```
+
+3. **Test with x402-watch (Full Payment Cycle):**
+```bash
+# Set your private key
+$env:X402_WATCH_PRIVATE_KEY="0x..." # Windows
+# export X402_WATCH_PRIVATE_KEY="0x..." # Linux/macOS
+
+cargo run -- --urls http://localhost:4021/weather
+```
+
+Expected output for a compliant endpoint (full cycle):
+```text
+Endpoint             | Status | Error Code | Message
+----------------------------------------------------------------------------------------------------
+http://localhost:4021/weather | PASS   | -          | Full payment lifecycle verified (x402 v2 compliant)
 ```
 
 ### Schema Validation Checklist

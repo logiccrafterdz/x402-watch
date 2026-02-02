@@ -115,13 +115,20 @@ impl Checker {
         info!("Checking endpoint: {} {} ({})", method, name, url);
         
         match self.do_full_payment_cycle(url, method).await {
-            Ok(_) => CheckResult {
-                name: name.to_string(),
-                url: url.to_string(),
-                status: CheckStatus::Pass,
-                error_code: None,
-                message: "Full payment lifecycle verified (x402 v2 compliant)".to_string(),
-            },
+            Ok(_) => {
+                let msg = if self.wallet_manager.is_some() {
+                    "Full payment lifecycle verified (x402 v2 compliant)".to_string()
+                } else {
+                    "Payment requirements validated (dry-run, x402 v2 compliant)".to_string()
+                };
+                CheckResult {
+                    name: name.to_string(),
+                    url: url.to_string(),
+                    status: CheckStatus::Pass,
+                    error_code: None,
+                    message: msg,
+                }
+            }
             Err(e) => {
                 error!("Check failed for {}: {}", name, e);
                 CheckResult {
