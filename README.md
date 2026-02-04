@@ -2,10 +2,6 @@
   <img src="assets/logo.png" alt="x402-watch logo" width="200"/>
 </p>
 
-<p align="center">
-  <img src="assets/logo.png" alt="x402-watch logo" width="200"/>
-</p>
-
 # x402-watch
 
 A lightweight health monitoring tool for public x402-enabled APIs.
